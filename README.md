@@ -1,6 +1,6 @@
 # DistriTask
 
-A comprehensive web-based task management system designed to streamline organizational workflow and enhance team collaboration. DistriTask supports two distinct user roles: Manager and Employee, with advanced features including real-time chat, AI chatbot assistance, and secure API authentication.
+A comprehensive web-based task management system designed to streamline organizational workflow and enhance team collaboration. DistriTask supports two distinct user roles: Manager and Employee, with advanced features including AI chatbot assistance and secure API authentication.
 
 <img width="1903" height="915" alt="Image" src="https://github.com/user-attachments/assets/3ab8a439-69f7-4891-9129-9c648f715426" />
 
@@ -18,7 +18,6 @@ A comprehensive web-based task management system designed to streamline organiza
 
 - **Secure Authentication**: Role-based access for Managers and Employees
 - **Intelligent Task Assignment**: Automatic task distribution based on workload
-- **Real-Time Chat**: Instant messaging with WebSocket support
 - **AI-Powered Chatbot**: Natural language interaction for task queries and automation
 - **Comprehensive Analytics**: Dashboards for task completion and performance tracking
 - **Mobile-Responsive Design**: Seamless experience across devices
@@ -29,7 +28,6 @@ A comprehensive web-based task management system designed to streamline organiza
 - **Python 3.x**
 - **Django 4.x**
 - **Django REST Framework**
-- **Django Channels** (WebSockets)
 - **Celery** (Task Queue)
 - **Redis** (Message Broker & Cache)
 
@@ -74,7 +72,7 @@ Update `TaskManager/settings.py` with:
 
 - Database settings (SQLite or MySQL)
 - Email backend credentials
-- Redis settings for Celery and Channels
+- Redis settings for Celery
 - Static and media file configurations
 
 ### 5. Set up database
@@ -109,7 +107,7 @@ pytest
 
 Now, you can start the necessary services and the development server:
 
-#### 1. Start Redis server (for Celery and Channels)
+#### 1. Start Redis server (for Celery)
 
 ```bash
 redis-server
@@ -167,17 +165,6 @@ Employees are provided with a streamlined interface to view only the tasks assig
 - **Deadline Awareness**: Clear visibility of task deadlines
 
 <img width="1920" height="920" alt="Image" src="https://github.com/user-attachments/assets/89676c4f-6f7f-461f-9d2c-0c997f80398a" />
-### Real-Time Communication
-
-DistriTask integrates a WebSocket-based chat system using Django Channels, enabling seamless real-time communication between team members.
-
-**Features:**
-- **WebSocket-Based Chat**: Powered by Django Channels for instant messaging
-- **Team Collaboration**: Dedicated chat rooms for different teams or projects
-- **Message History**: Access to past conversations for continuity
-- **Read Status Tracking**: Know when your messages have been seen
-
-<img width="1919" height="925" alt="Image" src="https://github.com/user-attachments/assets/93f093f8-b7ba-47f3-b029-a3268f82088f" />
 ### AI Chatbot Assistant
 
 An intelligent chatbot assistant powered by natural language processing provides instant support for task-related queries and automates common operations.

@@ -336,44 +336,6 @@ body {
     position: relative;
     z-index: 10;
 }
-.chat-btn {
-    background: linear-gradient(135deg, #3498db, #2980b9);
-    color: #fff;
-    font-weight: 500;
-    font-size: 1rem;
-    border: none;
-    box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
-    padding: 12px 20px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
-    cursor: pointer;
-    text-decoration: none;
-}
-
-.chat-btn:hover, .chat-btn:focus {
-    background: linear-gradient(135deg, #2980b9, #3498db);
-    transform: translateX(5px);
-    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
-    color: #fff;
-}
-
-.chat-btn i {
-    background: rgba(255, 255, 255, 0.2);
-    padding: 6px;
-    border-radius: 50%;
-    margin-right: 8px;
-    font-size: 1.2rem;
-    transition: background 0.3s, transform 0.2s;
-}
-
-.chat-btn:hover i, .chat-btn:focus i {
-    background: rgba(255, 255, 255, 0.3);
-    transform: scale(1.1);
-}
-
 .change-password-link {
     color: #fff;
     text-decoration: none;
@@ -1747,7 +1709,7 @@ h1 {
         flex-direction: column !important;
     }
     
-    .chat-btn, .change-password-link, .logout-btn {
+    .change-password-link, .logout-btn {
         padding: 12px 15px !important;
         font-size: 0.9rem !important;
         border-radius: 10px !important;
@@ -1759,19 +1721,6 @@ h1 {
         border: none !important;
         cursor: pointer !important;
         font-weight: 500 !important;
-    }
-    
-    .chat-btn {
-        background: linear-gradient(135deg, #3498db, #2980b9) !important;
-        color: white !important;
-        border: none !important;
-    }
-    
-    .chat-btn:hover {
-        background: linear-gradient(135deg, #2980b9, #3498db) !important;
-        transform: translateX(5px) !important;
-        color: white !important;
-        box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3) !important;
     }
     
     .change-password-link {
@@ -1822,7 +1771,7 @@ h1 {
         padding: 6px !important;
     }
     
-    .chat-btn, .change-password-link, .logout-btn {
+    .change-password-link, .logout-btn {
         padding: 10px 12px !important;
         font-size: 0.85rem !important;
     }
@@ -2644,7 +2593,7 @@ body.sidebar-open {
     gap: 10px;
 }
 
-.chat-btn, .change-password-link, .logout-btn {
+.change-password-link, .logout-btn {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -2658,15 +2607,6 @@ body.sidebar-open {
     font-weight: 500;
     width: 100%;
     justify-content: center;
-}
-
-.chat-btn {
-    background: linear-gradient(135deg, #3498db, #2980b9);
-}
-
-.chat-btn:hover {
-    background: linear-gradient(135deg, #2980b9, #3498db);
-    transform: translateX(5px);
 }
 
 .change-password-link {

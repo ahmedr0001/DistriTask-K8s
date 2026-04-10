@@ -53,13 +53,8 @@ def employee_tasks(request):
 
     tasks = Task.objects.filter(assigned_to_id=user_id)
 
-    # ✅ حدد المدير (هنا بنفترض إن فيه مدير واحد بس)
-    manager = User.objects.filter(role='manager').first()
-    manager_email = manager.email if manager else 'manager@example.com'
-
     return render(request, 'tasks/employee_tasks.html', {
         'tasks': tasks,
-        'manager_email': manager_email  # ✅ أضفها هنا
     })
 
 # Add a new task (Manager only)

@@ -28,9 +28,7 @@ urlpatterns = [
     path ('',include('core.urls',namespace='core')),
     path ('users/',include('users.urls',namespace='users')),
     path('tasks/', include(('tasks.urls', 'tasks'), namespace='tasks')),
-    path("chat/", include("chat.urls", namespace="chat")),
     path('chatbot/', include('chatbot.urls', namespace='chatbot')),
-    #path('api/chat/', include('chat.urls')),
     path('api-token-auth/', obtain_auth_token),
 
     

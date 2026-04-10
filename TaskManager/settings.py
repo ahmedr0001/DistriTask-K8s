@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
-from decouple import config
 import pymysql
 pymysql.install_as_MySQLdb()
 
@@ -36,9 +35,6 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
-    'chat',
-    'channels',
-    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -102,12 +98,6 @@ WSGI_APPLICATION = 'TaskManager.wsgi.application'
 
 
 ASGI_APPLICATION = 'TaskManager.asgi.application'
-
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    },
-}
 
 
 
