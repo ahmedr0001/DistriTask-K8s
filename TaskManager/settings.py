@@ -134,13 +134,30 @@ ASGI_APPLICATION = 'TaskManager.asgi.application'
 
 # FOR DOCKER DATABASE
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': os.getenv('MYSQL_DATABASE'),
+#         'USER': os.getenv('MYSQL_USER'),
+#         'PASSWORD': os.getenv('MYSQL_PASSWORD'),
+#         'HOST': 'db',
+#         'PORT': '3306',
+#         'OPTIONS': {
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+#         },
+#     }
+# }
+
+
+# for k3s
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv('MYSQL_DATABASE'),
         'USER': os.getenv('MYSQL_USER'),
         'PASSWORD': os.getenv('MYSQL_PASSWORD'),
-        'HOST': 'db',
+        'HOST': os.getenv('DB_HOST', 'db'),
         'PORT': '3306',
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
