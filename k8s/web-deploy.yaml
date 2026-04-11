@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: web-deploy
+  name: web-deploy
+  namespace: distritask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-deploy
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        app: web-deploy
+    spec:
+      containers:
+      - image: ahmedr0001/distritask:v1
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: my-secret
+        command: ["sh", "-c"]
+        args: ["python manage.py migrate && python manage.py add_data && python manage.py runserver 0.0.0.0:8000"]
+        name: distritask
+        resources: {}
+status: {}

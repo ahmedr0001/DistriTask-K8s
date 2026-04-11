@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: celery-deploy
+  name: celery-deploy
+  namespace: distritask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-deploy
+  template:
+    metadata:
+      labels:
+        app: celery-deploy
+    spec:
+      containers:
+      - image: ahmedr0001/distritask:v1
+        name: celery
+        envFrom:
+        - configMapRef:
+            name: backend-config
+        - secretRef:
+            name: my-secret
+        command: ["celery", "-A", "TaskManager", "worker", "--loglevel=info"]

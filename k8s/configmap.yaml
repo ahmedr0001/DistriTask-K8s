@@ -1,0 +1,10 @@
+apiVersion: v1
+data:
+  CELERY_BROKER_URL: redis://redis-service:6379/0
+  DB_HOST: mysql-service
+  MYSQL_DATABASE: mydatabase
+  MYSQL_USER: myuser
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: distritask
