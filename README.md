@@ -1,208 +1,273 @@
-# DistriTask
+# DistriTask — Full-Stack Task Management, Containerized & Orchestrated
 
-A comprehensive web-based task management system designed to streamline organizational workflow and enhance team collaboration. DistriTask supports two distinct user roles: Manager and Employee, with advanced features including AI chatbot assistance and secure API authentication.
+**DistriTask** is a portfolio-grade, full-stack task management system that demonstrates end-to-end **DevOps practice**: local **Docker / Docker Compose** containerization, then **K3s (Kubernetes)** orchestration with 12-factor-style configuration, persistence, and NodePort exposure for real cluster access.
 
-<img width="1903" height="915" alt="Image" src="https://github.com/user-attachments/assets/3ab8a439-69f7-4891-9129-9c648f715426" />
+![Django](https://img.shields.io/badge/Django-092E20?style=flat&logo=django&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?style=flat&logo=celery&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=flat&logo=mysql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)
 
-##  Table of Contents
+---
 
-- [Key Features](#key-features)
-- [Technologies Used](#technologies-used)
-- [Installation](#installation)
-- [Development & Testing](#development--testing)
-- [Core Features](#core-features)
-- [API Overview](#api-overview)
+## Visual proof
 
+DistriTask served from the cluster via **NodePort** (example: `http://<node-ip>:32415`), confirming the full stack is reachable after image build/import and manifest apply.
 
-##  Key Features
+![DistriTask home page exposed through K3s NodePort](docs/images/distritask-k3s-nodeport.png)
 
-- **Secure Authentication**: Role-based access for Managers and Employees
-- **Intelligent Task Assignment**: Automatic task distribution based on workload
-- **AI-Powered Chatbot**: Natural language interaction for task queries and automation
-- **Comprehensive Analytics**: Dashboards for task completion and performance tracking
-- **Mobile-Responsive Design**: Seamless experience across devices
+Cluster verification: all workloads in namespace `distritask` healthy — four **Running** pods (web, Celery, MySQL, Redis), **ClusterIP** services for data tier, and **web-service** as **NodePort** `8000 → 32415`.
 
-##  Technologies Used
+![kubectl get all -n distritask — pods, services, deployments, and ReplicaSets](docs/images/distritask-kubectl-get-all.png)
 
-### Backend
-- **Python 3.x**
-- **Django 4.x**
-- **Django REST Framework**
-- **Celery** (Task Queue)
-- **Redis** (Message Broker & Cache)
+---
 
-### Database
-- **MySQL** or **SQLite**
+## Architecture overview
 
-### Authentication
-- **Django's built-in authentication**
-- **Token authentication** for API access
+The platform is split into **four cooperating services** 🧩 (compose/K8s parity):
 
-### Testing
-- **pytest**
-- **Django test framework**
+| Layer | Role |
+|--------|------|
+| **Web (Django)** | HTTP UI and API; runs migrations and seed data on startup in both Compose and K8s. |
+| **Celery worker** | Background jobs using the same app image and settings as the web tier. |
+| **Redis** | Celery broker (`CELERY_BROKER_URL`). |
+| **MySQL 8** | Primary relational store; persistent volume in Kubernetes. |
 
-##  Installation
+**Orchestration:** Docker Compose for laptop/server bring-up; **K3s** for lightweight Kubernetes on a lab host (e.g. Red Hat class environment).
 
-Follow these steps to set up and run DistriTask locally:
+---
 
-### 1. Clone the repository
+## The engineering journey
 
-```bash
-git clone https://github.com/MUSTAFA-3LI/DistriTask
-cd task-manager
+### Phase 1 — Local containerization (Docker & Docker Compose) 🐳
+
+**Goals:** One reproducible stack for Django + Celery + Redis + MySQL, without manual migration steps every boot.
+
+**Highlights:**
+
+1. **Database readiness (race condition)**  
+   Django and Celery start faster than MySQL. Connecting too early caused migration failures.  
+   **Fix:** A `healthcheck` on the `db` service (`mysqladmin ping`) plus `depends_on` with `condition: service_healthy` for `web` and `celery`, so nothing touches the DB until MySQL accepts connections.
+
+2. **Smaller, faster images**  
+   Full Python images are heavy and slow to move.  
+   **Fix:** `python:3.9-slim`, install build deps (`gcc`, `default-libmysqlclient-dev`, `pkg-config`) in one `RUN`, and `rm -rf /var/lib/apt/lists/*` to trim layer bloat.
+
+3. **DRY single Dockerfile**  
+   Web and Celery share the same codebase and dependencies.  
+   **Fix:** One `dockerfile`; **no** fixed `CMD`. Compose injects `runserver` for `web` and `celery … worker` for `celery`, avoiding duplicate images/dockerfiles.
+
+4. **Deterministic startup**  
+   **Fix:** Web service command chains `migrate` → `add_data` → `runserver` so schema and demo data are applied before the server listens.
+
+**Unified Dockerfile** (project root — commands supplied by Compose/K8s):
+
+```dockerfile
+FROM python:3.9-slim
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y gcc default-libmysqlclient-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN pip install --upgrade pip
+
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . /app/
+
+EXPOSE 8000
+# CMD omitted — web vs celery defined in docker-compose / K8s
 ```
 
-### 2. Create virtual environment
+**Compose orchestration** (excerpt — see `docker-compose.yml` for full file):
 
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+```yaml
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: mydatabase
+      MYSQL_USER: myuser
+      MYSQL_PASSWORD: mypassword
+      MYSQL_ROOT_PASSWORD: myrootpassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+
+  web:
+    build: .
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py add_data &&
+             python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    environment:
+      - MYSQL_DATABASE=mydatabase
+      - MYSQL_USER=myuser
+      - MYSQL_PASSWORD=mypassword
+      - DB_HOST=db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery:
+    build: .
+    command: ["celery", "-A", "TaskManager", "worker", "--loglevel=info"]
+    environment:
+      - MYSQL_DATABASE=mydatabase
+      - MYSQL_USER=myuser
+      - MYSQL_PASSWORD=mypassword
+      - DB_HOST=db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  mysql_data:
 ```
 
-### 3. Install dependencies
+**Run locally:**
 
 ```bash
-pip install -r requirements.txt
+docker compose up --build
+# App: http://localhost:8000
 ```
 
-### 4. Configure settings
+*(Docker Compose V1: `docker-compose up --build`.)*
 
-Update `TaskManager/settings.py` with:
+---
 
-- Database settings (SQLite or MySQL)
-- Email backend credentials
-- Redis settings for Celery
-- Static and media file configurations
+### Phase 2 — Kubernetes orchestration (K3s) ☸️
 
-### 5. Set up database
+**Goals:** Same logical architecture on K3s — isolated namespace, externalized config, secrets for credentials, durable MySQL data, and a practical way to use **locally built images** without a public registry round-trip.
+
+**Kubernetes objects in this repo:**
+
+| Concern | Implementation |
+|--------|-----------------|
+| Isolation | `Namespace` `distritask` (`k8s/namespace.yaml`) |
+| Non-secret config | `ConfigMap` `backend-config` — e.g. `DB_HOST`, `CELERY_BROKER_URL`, DB name/user (`k8s/configmap.yaml`) |
+| Secrets (12-factor) | `Secret` `my-secret` — MySQL passwords Base64-encoded at rest (`k8s/secret.yaml`); **replace values for real deployments** |
+| MySQL persistence | `PersistentVolumeClaim` `mysql-pvc` (1Gi) + volume on `mysql-deploy` (`k8s/pvc.yaml`, `k8s/mysql-deploy.yaml`) |
+| Networking | `mysql-service`, `redis-service` — stable DNS for app pods (`k8s/sql-service.yaml`, `k8s/redis-service.yaml`) |
+| Workloads | `Deployment` manifests for MySQL, Redis, Django web, Celery (`k8s/*-deploy.yaml`) |
+
+**Service discovery & startup:** Pods talk to MySQL via **`mysql-service`** and Redis via **`redis-service`**. The web deployment runs **`migrate` → `add_data` → `runserver`** before serving, aligning DB schema with the cluster DB.
+
+**Local image bypass (no registry pull on the node):**  
+Build with Docker, export a tarball, import into K3s’s containerd:
 
 ```bash
-python manage.py migrate
+docker build -t ahmedr0001/distritask:v1 .
+docker save ahmedr0001/distritask:v1 -o distritask.tar
+sudo k3s ctr images import distritask.tar
 ```
 
-### 6. Create superuser
+This matches the image reference in `k8s/web-deploy.yaml` and `k8s/celery-deploy.yaml`. Adjust the tag if you use a different name.
+
+**Expose the UI (NodePort):**  
+After deployments are ready, create a NodePort Service (not stored as YAML in this repo by default):
 
 ```bash
-python manage.py createsuperuser
+kubectl expose deployment web-deploy \
+  --name=web-service \
+  --type=NodePort \
+  --port=8000 \
+  --target-port=8000 \
+  --namespace=distritask
 ```
 
-##  Development & Testing
-
-Before starting the server, ensure all tests pass to maintain code quality.
-
-### Running Tests
+Then:
 
 ```bash
-python manage.py test
-# or
-pytest
+kubectl get svc -n distritask
 ```
 
-> **Test Coverage**: The project includes comprehensive test coverage for all core functionalities.
+Use `<node-ip>:<nodePort>` in the browser (screenshot above used a lab node IP and assigned NodePort).
 
-![Image](https://github.com/user-attachments/assets/2b0e842f-2a02-4c6d-805f-8c873a1c566a)
+---
 
-### Starting Services
+## Deployment commands (K3s) — sequential apply
 
-Now, you can start the necessary services and the development server:
-
-#### 1. Start Redis server (for Celery)
+Run from the repository root on a machine with `kubectl` configured for your K3s cluster.
 
 ```bash
-redis-server
+# 0) (On the K3s node, after building) import the app image
+# docker build -t ahmedr0001/distritask:v1 .
+# docker save ahmedr0001/distritask:v1 -o distritask.tar
+# sudo k3s ctr images import distritask.tar
+
+# 1) Namespace, config, secrets, storage
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secret.yaml
+kubectl apply -f k8s/pvc.yaml
+
+# 2) Data layer & messaging + Services
+kubectl apply -f k8s/mysql-deploy.yaml
+kubectl apply -f k8s/redis-deploy.yaml
+kubectl apply -f k8s/sql-service.yaml
+kubectl apply -f k8s/redis-service.yaml
+
+# 3) Application tier
+kubectl apply -f k8s/web-deploy.yaml
+kubectl apply -f k8s/celery-deploy.yaml
+
+# 4) Expose Django (NodePort)
+kubectl expose deployment web-deploy \
+  --name=web-service \
+  --type=NodePort \
+  --port=8000 \
+  --target-port=8000 \
+  --namespace=distritask
 ```
 
-#### 2. Start Celery worker (in a new terminal)
+---
+
+## Operations cheat sheet
 
 ```bash
-celery -A TaskManager worker -l info
+kubectl get pods -n distritask
+kubectl get svc -n distritask
+kubectl logs -f deployment/web-deploy -n distritask
 ```
 
-#### 3. Start development server
+---
 
-```bash
-python manage.py runserver
-```
+## Repository layout (infra-focused)
 
-##  Core Features
+| Path | Purpose |
+|------|---------|
+| `dockerfile` | Shared image for Django web and Celery |
+| `docker-compose.yml` | Four-service local stack |
+| `k8s/` | Namespace, ConfigMap, Secret, PVC, Deployments, Services |
 
-### Authentication & User Management
+---
 
-DistriTask features a robust authentication system allowing users to securely log in and manage their accounts. It supports a custom user model with email-based login, password reset functionality via OTP, and comprehensive role-based access control for Managers and Employees.
+## Author
 
-**Features:**
-- **Custom User Model**: Email login and secure password management
-- **Role-Based Access Control**: Distinct permissions for Managers and Employees
-- **Session-Based Login/Logout**: Standard web session management
-- **Token-Based API Authentication**: Secure access for all API interactions
-- **Password Reset**: Via OTP sent to the registered email
-- **CSRF Protection**: Enhanced security against cross-site request forgeries
+**DistriTask** is maintained as a portfolio project. The infrastructure work here—Docker, Docker Compose, and Kubernetes (K3s) manifests—documents a practical path from local containers to a running multi-service deployment on a lab cluster.
 
-<img width="1919" height="915" alt="Image" src="https://github.com/user-attachments/assets/82ed96bd-b407-4214-9663-7e871d36d01f" />
-<img width="1917" height="925" alt="Image" src="https://github.com/user-attachments/assets/e2c9ce14-72da-4720-81a0-2f0fd29f41cd" />
-### Intelligent Task Management (Manager View)
+---
 
-Managers have full control over task creation, assignment, and monitoring. The system incorporates an intelligent algorithm that automatically assigns tasks to employees based on workload balancing and specific categories, ensuring optimal distribution and efficiency.
-
-**Features:**
-- **Task Creation, Editing, Deletion**: Full CRUD operations for tasks
-- **Automatic Assignment**: Tasks are intelligently assigned to the employee with the least uncompleted tasks within a given category
-- **Task Status Tracking**: Monitor tasks as pending or completed
-- **Categories & Deadlines**: Organize tasks with categories and strict deadlines
-- **Filtering & Searching**: Easily view tasks by status, assigned employee, or category
-- **Task ID Lookup**: Quickly find tasks by their title
-
-<img width="1909" height="921" alt="Image" src="https://github.com/user-attachments/assets/1ab329e7-76d4-4472-a218-8c7ab89f87f9" />
-<img width="1907" height="921" alt="Image" src="https://github.com/user-attachments/assets/3f9c553d-67b5-45cd-847e-9ef2c6d486df" />
-### Employee Task View
-
-Employees are provided with a streamlined interface to view only the tasks assigned to them. They can track the status of their tasks, mark them as completed, and manage their workload effectively within the given deadlines.
-
-**Features:**
-- **Personalized Task List**: Employees only see tasks assigned specifically to them
-- **Task Status Updates**: Ability to mark tasks as completed
-- **Deadline Awareness**: Clear visibility of task deadlines
-
-<img width="1920" height="920" alt="Image" src="https://github.com/user-attachments/assets/89676c4f-6f7f-461f-9d2c-0c997f80398a" />
-### AI Chatbot Assistant
-
-An intelligent chatbot assistant powered by natural language processing provides instant support for task-related queries and automates common operations.
-
-**Features:**
-- **Natural Language Processing**: Understands and responds to natural language queries
-- **Task-Related Queries**: Get instant answers on task statuses, deadlines, and details
-- **Quick Actions**: Perform common operations like task reassignment or status updates
-- **Multi-Step Interactions**: Supports complex operations requiring multiple conversational turns
-- **Performance Analytics**: Retrieve statistics on task completion rates, employee performance, and more
-
-<img width="1905" height="915" alt="Image" src="https://github.com/user-attachments/assets/7739e01a-ce94-4f07-b4f9-798e5f0e8428" />
-##  API Overview
-
-### Chatbot API Endpoints (Token Authentication Required)
-
-| Endpoint                       | Method | Description                         |
-| ------------------------------ | ------ | ----------------------------------- |
-| `/chatbot/total-tasks/`        | GET    | Get total task count                |
-| `/chatbot/completed-tasks/`    | GET    | Get completed tasks statistics      |
-| `/chatbot/delayed-tasks/`      | GET    | Get delayed tasks information       |
-| `/chatbot/overdue-tasks/`      | GET    | Get overdue tasks list              |
-| `/chatbot/top-employees/`      | GET    | Get top performing employees        |
-| `/chatbot/completion-rate/`    | GET    | Get overall completion rate         |
-| `/chatbot/tasks-due-on/`       | GET    | Get tasks due on specific date      |
-| `/chatbot/tasks-per-category/` | GET    | Get tasks by category               |
-| `/chatbot/tasks-for-user/`     | GET    | Get tasks assigned to specific user |
-| `/chatbot/user-info/`          | GET    | Get user information                |
-| `/chatbot/task-id/`            | GET    | Get task ID by title                |
-| `/chatbot/reassign-task/`      | POST   | Reassign task to different user     |
-
-
-
-### General API Endpoints
-
-DistriTask provides a comprehensive set of RESTful API endpoints built with Django REST Framework, ensuring secure and efficient data exchange for all functionalities. All API endpoints are protected with token authentication and CSRF protection.
-
-| Endpoint                   | Method | Description               |
-| -------------------------- | ------ | ------------------------- |
-| `/chatbot/api-token-auth/` | POST   | Get API token for chatbot |
-
+*DistriTask — organize tasks efficiently, from a single `docker compose up` to a K3s-backed NodePort deployment.*
