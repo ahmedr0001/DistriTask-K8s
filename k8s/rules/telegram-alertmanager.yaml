@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: telegram-config
+  namespace: distritask
+  labels:
+    release: monitoring-stack
+spec:
+  route:
+    groupBy: ['job']
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 12h
+    receiver: 'Telegram-Alerts'
+    matchers:
+      - name: severity
+        matchType: "="
+        value: critical
+  receivers:
+    - name: Telegram-Alerts
+      telegramConfigs:
+        - chatID: 855708276
+          parseMode: 'HTML'
+          disableNotifications: false
+          sendResolved: true
+          botToken:
+            name: telegram-bot-token-secret
+            key: token

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+  namespace: distritask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        app: mysql-exporter
+    spec:
+      containers:
+      - name: exporter
+        image: prom/mysqld-exporter:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--config.my-cnf=/etc/mysql/.my.cnf"
+        ports:
+        - name: metrics
+          containerPort: 9104
+        volumeMounts:
+        - name: secret-volume
+          mountPath: /etc/mysql
+          readOnly: true
+      volumes:
+      - name: secret-volume
+        secret:
+          secretName: my-secret
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-exporter-service
+  namespace: distritask
+  labels:
+    app: mysql-exporter
+spec:
+  selector:
+    app: mysql-exporter
+  ports:
+    - name: metrics
+      port: 9104
+      targetPort: 9104

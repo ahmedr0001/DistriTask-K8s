@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: distritask-backend-monitor
+  namespace: distritask
+  labels:
+    release: monitoring-stack # for prometheus-operator to discover this ServiceMonitor
+spec:
+  # search for services in the distritask namespace
+  namespaceSelector:
+    matchNames:
+      - distritask 
+      
+  # 2. what services to monitor?
+  selector:
+    matchLabels:
+      app: web-deploy
+      
+  # 3. how does it scrape data?
+  endpoints:
+  - port: web             # the name we defined in the Service
+    path: /metrics
+    interval: 15s        

@@ -17,7 +17,8 @@ spec:
         app: web-deploy
     spec:
       containers:
-      - image: ahmedr0001/distritask:v1
+      - image: ahmedr0001/distritask:v2
+        # imagePullPolicy: Never
         envFrom:
         - configMapRef:
             name: backend-config

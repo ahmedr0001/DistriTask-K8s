@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: django-app-alerts
+  namespace: distritask
+  labels:
+    release: monitoring-stack
+spec:
+  groups:
+  - name: DjangoApp.rules
+    rules:
+    - alert: DjangoExceptionsSpike
+      expr: rate(django_http_exceptions_total_by_view_total[5m]) > 1
+      for: 15s
+      labels:
+        severity: critical
+      annotations:
+        summary: "Django Application Exceptions Detected!"
+        description: "The Django application is throwing exceptions in the view: {{ $labels.view }} on instance {{ $labels.instance }}. Check the application logs."

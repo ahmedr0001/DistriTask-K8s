@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mysql-exporter-monitor
+  namespace: distritask       
+  labels:
+    release: monitoring-stack # for the Prometheus Operator to detect this monitor
+spec:
+  # Where should Prometheus look? (Your app's namespace)
+  namespaceSelector:
+    matchNames:
+      - distritask
+      
+  # Which service should Prometheus target? (Matches the exporter service label)
+  selector:
+    matchLabels:
+      app: mysql-exporter
+      
+  # How should Prometheus scrape the metrics?
+  endpoints:
+  - port: metrics             
+    path: /metrics            
+    interval: 15s             

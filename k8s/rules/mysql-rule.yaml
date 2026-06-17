@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mysql-down
+  namespace: distritask
+  labels:
+    release: monitoring-stack
+spec:
+  groups:
+  - name: MySQL.rules
+    rules:
+    - alert: MySQL-Down
+      expr: mysql_up == 0
+      for: 15s
+      labels:
+        severity: critical
+      annotations:
+        summary: "MySQL Database is UNAVAILABLE!"
+        description: "MySQL instance at {{ $labels.instance }}."
