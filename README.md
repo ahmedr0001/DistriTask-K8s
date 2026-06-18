@@ -37,7 +37,7 @@
 
 DistriTask is served from the Kubernetes cluster via a **NodePort** service (e.g. `http://<node-ip>:32415`). The application is fully functional with all services (Django web, Celery worker, Redis, MySQL) running in the cluster.
 
-![DistriTask home page exposed through K3s NodePort](docs/images/distritask-k3s-nodeport.png)
+![DistriTask Archticture Overview ](docs/images/distritask-k3s-nodeport.png)
 
 ### Cluster Health
 
