@@ -10,7 +10,7 @@ spec:
   - name: MySQL.rules
     rules:
     - alert: MySQL-Down
-      expr: mysql_up == 0
+      expr: absent(mysql_up == 1)
       for: 15s
       labels:
         severity: critical

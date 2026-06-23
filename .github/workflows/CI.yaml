@@ -1,0 +1,43 @@
+name: DistriTask CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  buildAndTest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Django Tests
+        run: python manage.py test
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set Custom Version
+        run: echo "CUSTOM_VERSION=$((${{ github.run_number }} + 2))" >> $GITHUB_ENV
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ahmedr0001/distritask:latest
+            ahmedr0001/distritask:v${{ env.CUSTOM_VERSION }}
+            ahmedr0001/distritask:${{ github.sha }}
