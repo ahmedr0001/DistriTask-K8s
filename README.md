@@ -4,6 +4,7 @@
 - **Local**: Docker / Docker Compose containerization for rapid development  
 - **Clustered**: K3s (Kubernetes) orchestration with 12-factor config, persistence, and real-world networking  
 - **Observable**: Prometheus/Grafana/Alertmanager stack with Telegram incident routing  
+- **Automated**: GitHub Actions CI pipeline (build, test, push) + ArgoCD GitOps CD with Kustomize-driven image updates
 
 ![Django](https://img.shields.io/badge/Django-092E20?style=flat&logo=django&logoColor=white)
 ![Celery](https://img.shields.io/badge/Celery-37814A?style=flat&logo=celery&logoColor=white)
@@ -13,6 +14,9 @@
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F2CC0C?style=flat&logo=grafana&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white)
+![ArgoCD](https://img.shields.io/badge/ArgoCD-EF7B4D?style=flat&logo=argo&logoColor=white)
+![Kustomize](https://img.shields.io/badge/Kustomize-326CE5?style=flat&logo=kubernetes&logoColor=white)
 
 ---
 
@@ -23,11 +27,12 @@
 3. [Phase 1: Docker & Docker Compose](#phase-1--docker--docker-compose-) — Local development  
 4. [Phase 2: Kubernetes (K3s)](#phase-2--kubernetes-k3s-) — Cluster deployment  
 5. [Phase 3: Monitoring & Alerting](#phase-3--monitoring--alerting-) — Observability stack  
-6. [Complete Deployment Guide](#complete-deployment-guide) — Step-by-step K3s + Monitoring  
-7. [Operations & Troubleshooting](#operations--troubleshooting) — Common tasks and fixes  
-8. [Repository Structure](#repository-structure) — File layout and purpose  
-9. [Security & Best Practices](#security--best-practices) — Notes for production  
-10. [Author & License](#author)
+6. [Phase 4: CI/CD with GitHub Actions, Kustomize & ArgoCD](#phase-4--cicd-with-github-actions-kustomize--argocd-) — GitOps automation  
+7. [Complete Deployment Guide](#complete-deployment-guide) — Step-by-step K3s + Monitoring  
+8. [Operations & Troubleshooting](#operations--troubleshooting) — Common tasks and fixes  
+9. [Repository Structure](#repository-structure) — File layout and purpose  
+10. [Security & Best Practices](#security--best-practices) — Notes for production  
+11. [Author & License](#author)
 
 ---
 
@@ -766,9 +771,252 @@ spec:
 
 ---
 
+## Phase 4 — CI/CD with GitHub Actions, Kustomize & ArgoCD 🚀
+
+### Goal
+
+Close the loop between code and cluster by adding a fully automated **GitOps pipeline**:
+- Every push to `main` triggers a **GitHub Actions CI workflow** that builds a fresh Docker image, tags it deterministically, and pushes it to Docker Hub.
+- The workflow then uses **Kustomize** to bump the image tag inside `k8s/kustomization.yaml` and commits the change back to the repository.
+- **ArgoCD** continuously watches the `k8s/` directory in the repo; when the kustomization changes, it automatically reconciles the cluster to the new desired state (`prune: true`, `selfHeal: true`).
+
+The result: a `git push` is the only manual step needed to ship a new version to the K3s cluster.
+
+### Pipeline Architecture
+
+```
+Developer
+    │  git push origin main
+    ▼
+[ GitHub Actions: DistriTask CI Pipeline ]
+    ├─ Checkout code
+    ├─ Set up Python 3.9 & install deps
+    ├─ docker login → Docker Hub
+    ├─ Compute CUSTOM_VERSION = run_number + 2
+    ├─ docker buildx build & push
+    │     ├─ ahmedr0001/distritask:latest
+    │     ├─ ahmedr0001/distritask:v<CUSTOM_VERSION>
+    │     └─ ahmedr0001/distritask:<git-sha>
+    └─ kustomize edit set image ... :v<CUSTOM_VERSION>
+          └─ git commit & push k8s/kustomization.yaml
+                  │
+                  ▼
+            [ Git Repository (main) ]
+                  │  polled / webhook
+                  ▼
+            [ ArgoCD Application: distritask-app ]
+                  ├─ source: repo path = k8s/   (Kustomize)
+                  ├─ destination: cluster, namespace = distritask
+                  └─ syncPolicy: automated (prune + selfHeal)
+                  │
+                  ▼
+            [ K3s Cluster — Reconciled ]
+              Deployments roll out new image automatically
+```
+
+### CI — GitHub Actions Workflow
+
+Located at `.github/workflows/CI.yaml`. It runs on every push to `main` and performs build → push → manifest update in a single job:
+
+```yaml
+name: DistriTask CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  buildAndTest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      # - name: Run Django Tests
+      #   run: python manage.py test
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set Custom Version
+        run: echo "CUSTOM_VERSION=$((${{ github.run_number }} + 2))" >> $GITHUB_ENV
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ahmedr0001/distritask:latest
+            ahmedr0001/distritask:v${{ env.CUSTOM_VERSION }}
+            ahmedr0001/distritask:${{ github.sha }}
+
+      - name: Update Image Tag with Kustomize
+        run: |
+          cd k8s
+          kustomize edit set image ahmedr0001/distritask=ahmedr0001/distritask:v${{ env.CUSTOM_VERSION }}
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "Update image tag to v${{ env.CUSTOM_VERSION }} via Kustomize"
+          git push
+```
+
+#### Required GitHub Secrets
+
+The workflow needs the following repository secrets configured under **Settings → Secrets and variables → Actions**:
+
+| Secret | Purpose |
+|--------|---------|
+| `DOCKERHUB_USERNAME` | Docker Hub account name (e.g. `ahmedr0001`) |
+| `DOCKERHUB_TOKEN` | Docker Hub Personal Access Token with read/write/delete on repos |
+
+The job also relies on the default `GITHUB_TOKEN` (granted via `permissions: contents: write`) so the workflow can commit the kustomization update back to `main`.
+
+#### Image Tagging Strategy
+
+Each successful build publishes three tags so consumers can pin to any precision level:
+
+- `latest` — moving tag, points to the most recent successful build (convenient, not for prod pinning)
+- `v<CUSTOM_VERSION>` — monotonically increasing version derived from `github.run_number + 2`; this is the tag Kustomize writes into the manifests and ArgoCD eventually deploys
+- `<git-sha>` — immutable commit hash tag for forensic traceability
+
+### Kustomize — Single Source of Truth for Manifests
+
+Instead of patching individual Deployment YAMLs every release, all K8s manifests are aggregated through Kustomize. The kustomization file (`k8s/kustomization.yaml`) lists every resource and pins the application image tag in one place — that's the only line CI rewrites per release.
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- celery-deploy.yaml
+- configmap.yaml
+- distritask-monitor.yaml
+- mysql-deploy.yaml
+- mysql-exporter-deployment.yaml
+- mysql-monitor.yaml
+- namespace.yaml
+- pvc.yaml
+- redis-deploy.yaml
+- redis-service.yaml
+- secret.yaml
+- sql-service.yaml
+- web-deploy.yaml
+- web-service.yaml
+- rules/telegram-alertmanager.yaml
+- rules/mysql-rule.yaml
+- rules/django-web-rules.yaml
+- rules/telegram-secret.yaml
+
+images:
+- name: ahmedr0001/distritask
+  newName: ahmedr0001/distritask
+  newTag: v9
+```
+
+Key points:
+- `resources:` aggregates every manifest in `k8s/` so the whole stack can be applied with a single command.
+- `images:` is the override CI manipulates via `kustomize edit set image ...`. After each successful CI run, `newTag` is updated to the freshly built version — committed back to the repo so the Git history *is* the deployment history.
+- You can render the final manifests locally without applying them:
+  ```bash
+  kubectl kustomize k8s/
+  # or apply directly:
+  kubectl apply -k k8s/
+  ```
+
+### ArgoCD — GitOps Continuous Delivery
+
+ArgoCD is the controller running inside the cluster that watches this Git repository and ensures the live state matches the manifests under `k8s/`. The Application definition lives at `argocd-setup/argocd-app.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: distritask-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ahmedr0001/DistriTask-K8s.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: distritask
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+Highlights:
+- **`path: k8s`** — ArgoCD detects the `kustomization.yaml` there and renders the manifests with Kustomize automatically (no extra plugin config required).
+- **`automated.prune: true`** — Resources removed from Git are also removed from the cluster, preventing drift.
+- **`automated.selfHeal: true`** — Manual `kubectl edit` changes that diverge from Git are reverted; Git is the single source of truth.
+- **`destination.namespace: distritask`** — All synced resources land in the application namespace alongside the rest of the stack.
+
+### Installing & Wiring ArgoCD
+
+If ArgoCD is not yet installed on the cluster:
+
+```bash
+# 1) Create the argocd namespace and install the upstream manifests
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# 2) Wait for the ArgoCD server to be ready
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/argocd-server -n argocd
+
+# 3) Register the DistriTask application
+kubectl apply -f argocd-setup/argocd-app.yaml
+
+# 4) (Optional) Access the ArgoCD UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Open https://localhost:8080
+# Initial admin password:
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d; echo
+
+# 5) Verify the application is syncing
+kubectl get applications -n argocd
+# NAME              SYNC STATUS   HEALTH STATUS
+# distritask-app    Synced        Healthy
+```
+
+### End-to-End Release Flow
+
+Once the pipeline is wired up, releasing a new version is fully hands-off:
+
+1. **Developer** commits a code change and runs `git push origin main`.
+2. **GitHub Actions** builds the image, pushes `ahmedr0001/distritask:v<N>` to Docker Hub, and commits an updated `k8s/kustomization.yaml` (new `newTag`).
+3. **ArgoCD** notices the manifest change on the next polling cycle (or via webhook), renders Kustomize, and computes a diff against the cluster.
+4. **ArgoCD** applies the diff — typically only the `web-deploy` and `celery-deploy` Deployments — and Kubernetes performs a rolling update to the new image.
+5. **Prometheus & Grafana** keep monitoring; if the new build misbehaves, alerts route to Telegram per Phase 3.
+
+If something goes wrong, rollback is just a `git revert` of the kustomization commit — ArgoCD will then sync the cluster back to the previous image.
+
+---
+
 ## Complete Deployment Guide
 
-### Quick Start: All Three Phases
+### Quick Start: All Four Phases
 
 This section walks through deploying everything from scratch.
 
@@ -778,6 +1026,8 @@ This section walks through deploying everything from scratch.
 - K3s cluster running (Phase 2)
 - `kubectl` configured for the K3s cluster
 - `helm` (v3+) installed
+- `kustomize` (v4+) installed (for Phase 4 / GitOps usage)
+- ArgoCD installed in the cluster (for Phase 4 — see installation steps in Phase 4)
 
 #### Phase 1: Docker Compose (Local Testing)
 
@@ -940,6 +1190,63 @@ kubectl apply -f /tmp/test-alert.yaml
 kubectl delete -f /tmp/test-alert.yaml
 ```
 
+#### Phase 4: CI/CD with GitHub Actions, Kustomize & ArgoCD
+
+**Step 1: Configure GitHub repository secrets**
+
+In the GitHub repo, go to **Settings → Secrets and variables → Actions** and add:
+
+- `DOCKERHUB_USERNAME` — your Docker Hub username
+- `DOCKERHUB_TOKEN` — a Docker Hub access token with push permission
+
+**Step 2: Install ArgoCD into the cluster (one-time)**
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/argocd-server -n argocd
+```
+
+**Step 3: Register the DistriTask ArgoCD application**
+
+```bash
+kubectl apply -f argocd-setup/argocd-app.yaml
+
+kubectl get applications -n argocd
+# distritask-app should show SYNC=Synced, HEALTH=Healthy after the first sync
+```
+
+**Step 4: Trigger an end-to-end deploy**
+
+```bash
+# Make any code change and push to main
+git add .
+git commit -m "feat: new release"
+git push origin main
+
+# GitHub Actions builds & pushes the image, bumps k8s/kustomization.yaml,
+# and pushes that commit back. ArgoCD picks it up automatically and rolls
+# out the new image to the distritask namespace.
+
+# Watch the rollout
+kubectl get pods -n distritask -w
+```
+
+**Step 5: (Optional) Access the ArgoCD UI**
+
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Initial admin password:
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d; echo
+
+# Open https://localhost:8080 and log in as admin
+```
+
 ---
 
 ## Operations & Troubleshooting
@@ -1050,17 +1357,25 @@ DistriTask-K8s/
 ├── tasks/                             # Django app: task management (primary)
 ├── users/                             # Django app: user management
 │
+├── .github/
+│   └── workflows/
+│       └── CI.yaml                    # GitHub Actions: build, push, bump Kustomize tag
+│
+├── argocd-setup/
+│   └── argocd-app.yaml                # ArgoCD Application manifest (GitOps source)
+│
 ├── k8s/                               # Kubernetes manifests
+│   ├── kustomization.yaml             # Kustomize entry point (resources + image tag)
 │   ├── namespace.yaml                 # App namespace
 │   ├── configmap.yaml                 # Non-secret configuration
 │   ├── secret.yaml                    # Credentials (replace before deploy)
 │   ├── pvc.yaml                       # MySQL persistent volume claim
 │   ├── mysql-deploy.yaml              # MySQL deployment
-│   ├── mysql-deploy.yaml              # MySQL deployment
 │   ├── redis-deploy.yaml              # Redis deployment
 │   ├── sql-service.yaml               # MySQL service (ClusterIP)
 │   ├── redis-service.yaml             # Redis service (ClusterIP)
 │   ├── web-deploy.yaml                # Django web deployment
+│   ├── web-service.yaml               # Django web service (NodePort)
 │   ├── celery-deploy.yaml             # Celery worker deployment
 │   ├── distritask-monitor.yaml        # ServiceMonitor for web app
 │   ├── mysql-exporter-deployment.yaml # MySQL metrics exporter
