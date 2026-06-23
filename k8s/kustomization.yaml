@@ -24,4 +24,4 @@ resources:
 images:
 - name: ahmedr0001/distritask
   newName: ahmedr0001/distritask
-  newTag: v9
+  newTag: v10
