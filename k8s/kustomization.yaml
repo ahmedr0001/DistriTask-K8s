@@ -19,3 +19,9 @@ resources:
 - ./rules/mysql-rule.yaml
 - ./rules/django-web-rules.yaml
 - ./rules/telegram-secret.yaml
+- web-deploy.yaml
+images:
+- name: ahmedr0001/distritask
+  newName: ahmedr0001/distritask
+  newTag: v7
+
