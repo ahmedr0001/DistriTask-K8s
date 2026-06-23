@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   buildAndTest:
     runs-on: ubuntu-latest
@@ -20,8 +23,8 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-#      - name: Run Django Tests
-#       run: python manage.py test
+      # - name: Run Django Tests
+      #   run: python manage.py test
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -41,3 +44,13 @@ jobs:
             ahmedr0001/distritask:latest
             ahmedr0001/distritask:v${{ env.CUSTOM_VERSION }}
             ahmedr0001/distritask:${{ github.sha }}
+
+      - name: Update Image Tag with Kustomize
+        run: |
+          cd k8s
+          kustomize edit set image ahmedr0001/distritask=ahmedr0001/distritask:v${{ env.CUSTOM_VERSION }}
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "Update image tag to v${{ env.CUSTOM_VERSION }} via Kustomize"
+          git push
